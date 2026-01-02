@@ -8,26 +8,22 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
   if (!baseUrl.startsWith('http')) baseUrl = `http://${baseUrl}`;
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
   
-  // Proxy robusto para chamadas de API
   const wrapUrl = (url: string) => {
     if (!useProxy) return url;
-    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    // Usamos allorigins raw para garantir que o JSON grande não seja truncado
+    return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
   };
 
   const authParams = `username=${user}&password=${pass}`;
   const loginUrl = `${baseUrl}/player_api.php?${authParams}`;
 
   try {
-    const response = await fetch(wrapUrl(loginUrl), { 
-      cache: 'no-store',
-      headers: { 'Accept': 'application/json' }
-    });
-    
-    if (!response.ok) throw new Error(`Servidor IPTV offline (Status ${response.status})`);
+    const response = await fetch(wrapUrl(loginUrl), { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Servidor offline (Status ${response.status})`);
     
     const data = await response.json();
     if (!data.user_info || data.user_info.auth === 0) {
-      throw new Error('Conta IPTV expirada ou dados incorretos.');
+      throw new Error('Usuário ou Senha incorretos no servidor.');
     }
 
     const fetchAction = async (action: string) => {
@@ -38,10 +34,12 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
         const json = await res.json();
         return Array.isArray(json) ? json : [];
       } catch (e) {
+        console.warn(`Erro ao carregar ${action}:`, e);
         return [];
       }
     };
 
+    // Buscamos as 3 categorias. Se uma der erro, as outras ainda podem funcionar.
     const [live, vod, series] = await Promise.all([
       fetchAction('get_live_streams'),
       fetchAction('get_vod_streams'),
@@ -50,50 +48,53 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
 
     const items: IPTVItem[] = [];
 
-    // CANAIS: Preferimos .m3u8 (HLS) para rodar no navegador
+    // CANAIS: .ts é o padrão absoluto do Xtream Codes para streams raw
     live.forEach((item: any) => {
-      if (!item.stream_id) return;
-      items.push({
-        id: `live_${item.stream_id}`,
-        name: item.name || 'Canal',
-        logo: item.stream_icon || '',
-        url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.m3u8`,
-        category: item.category_name || 'TV',
-        group: 'Live'
-      });
+      if (item.stream_id) {
+        items.push({
+          id: `live_${item.stream_id}`,
+          name: item.name || 'Canal',
+          logo: item.stream_icon || '',
+          url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.ts`,
+          category: item.category_name || 'Canais',
+          group: 'Live'
+        });
+      }
     });
 
-    // FILMES: Xtream Codes padrão /movie/user/pass/id.ext
+    // FILMES
     vod.forEach((item: any) => {
-      if (!item.stream_id) return;
-      const ext = item.container_extension || 'mp4';
-      items.push({
-        id: `vod_${item.stream_id}`,
-        name: item.name || 'Filme',
-        logo: item.stream_icon || '',
-        url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${ext}`,
-        category: item.category_name || 'VOD',
-        group: 'Movie'
-      });
+      if (item.stream_id) {
+        const ext = item.container_extension || 'mp4';
+        items.push({
+          id: `vod_${item.stream_id}`,
+          name: item.name || 'Filme',
+          logo: item.stream_icon || '',
+          url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${ext}`,
+          category: item.category_name || 'Filmes',
+          group: 'Movie'
+        });
+      }
     });
 
-    // SÉRIES: Precisam de resolução de ID de episódio
+    // SÉRIES
     series.forEach((item: any) => {
-      if (!item.series_id) return;
-      items.push({
-        id: `series_${item.series_id}`,
-        name: item.name || 'Série',
-        logo: item.cover || '',
-        url: `SERIES_ID:${item.series_id}`, 
-        category: item.category_name || 'Séries',
-        group: 'Series'
-      });
+      if (item.series_id) {
+        items.push({
+          id: `series_${item.series_id}`,
+          name: item.name || 'Série',
+          logo: item.cover || '',
+          url: `SERIES_ID:${item.series_id}`, 
+          category: item.category_name || 'Séries',
+          group: 'Series'
+        });
+      }
     });
 
     return items;
   } catch (error: any) {
     console.error('XC Fetch Error:', error);
-    throw new Error(error.message || 'Erro ao conectar no servidor.');
+    throw new Error(error.message || 'Falha ao conectar com o servidor IPTV.');
   }
 }
 
@@ -104,15 +105,15 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
   const url = `${baseUrl}/player_api.php?username=${user}&password=${pass}&action=get_series_info&series_id=${seriesId}`;
-  
+  const wrapped = useProxy ? `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` : url;
+
   try {
-    const res = await fetch(useProxy ? `https://corsproxy.io/?${encodeURIComponent(url)}` : url);
+    const res = await fetch(wrapped);
     const data = await res.json();
-    
     if (data.episodes) {
-      const seasonKeys = Object.keys(data.episodes);
-      if (seasonKeys.length > 0) {
-        const firstSeason = data.episodes[seasonKeys[0]];
+      const seasons = Object.keys(data.episodes);
+      if (seasons.length > 0) {
+        const firstSeason = data.episodes[seasons[0]];
         const episode = Array.isArray(firstSeason) ? firstSeason[0] : firstSeason;
         if (episode) {
           const ext = episode.container_extension || 'mp4';
@@ -123,6 +124,6 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
     }
     throw new Error('Nenhum episódio encontrado.');
   } catch (e) {
-    throw new Error('Erro ao carregar série.');
+    throw new Error('Falha ao obter vídeo da série.');
   }
 }
