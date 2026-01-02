@@ -176,6 +176,7 @@ const App: React.FC = () => {
       {view !== 'Setup' && (
         <>
           <BottomNav activeView={view} setView={setView} />
+          {/* Manel AI integrated here */}
           <ManelAI playlistItems={items} />
         </>
       )}
