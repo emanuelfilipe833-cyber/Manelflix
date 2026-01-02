@@ -7,13 +7,13 @@ import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import ContentRow from './components/ContentRow';
 import VideoPlayer from './components/VideoPlayer';
-import { Play, Info, Database, Link as LinkIcon, AlertCircle, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Play, Info, Database, Link as LinkIcon, AlertCircle, ShieldCheck, ShieldAlert, RefreshCw } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = React.useState<IPTVItem[]>([]);
   const [view, setView] = React.useState<ViewState>('Home');
   const [selectedItem, setSelectedItem] = React.useState<IPTVItem | null>(null);
-  const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('XC'); // Default para XC já que é o que o usuário está usando
+  const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('XC');
   
   const [m3uUrl, setM3uUrl] = React.useState('');
   const [xcCreds, setXcCreds] = React.useState<XCCredentials>({ 
@@ -49,14 +49,14 @@ const App: React.FC = () => {
       }
       
       if (parsedItems.length === 0) {
-        throw new Error('Nenhum canal encontrado nesta lista.');
+        throw new Error('A lista foi carregada, mas não encontramos nenhum canal/filme nela.');
       }
 
       setItems(parsedItems);
       localStorage.setItem('manelflix_playlist', JSON.stringify(parsedItems));
       setView('Home');
     } catch (e: any) {
-      setErrorMsg(e.message || 'Erro ao carregar lista.');
+      setErrorMsg(e.message || 'Erro inesperado ao carregar lista.');
     } finally {
       setLoading(false);
     }
@@ -68,29 +68,32 @@ const App: React.FC = () => {
 
   const renderSetup = () => (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-20">
-      <div className="max-w-md w-full bg-zinc-900/50 p-8 rounded-xl border border-zinc-800 backdrop-blur-sm">
-        <h2 className="text-3xl font-bold mb-2 text-center text-red-600">Manelflix</h2>
-        <p className="text-gray-500 text-center mb-6 text-sm">Insira seus dados para começar</p>
+      <div className="max-w-md w-full bg-zinc-900/80 p-8 rounded-2xl border border-zinc-800 backdrop-blur-md shadow-2xl">
+        <h2 className="text-4xl font-black mb-1 text-center text-red-600 tracking-tighter uppercase">Manelflix</h2>
+        <p className="text-gray-400 text-center mb-8 text-sm font-medium">Player IPTV de Alta Performance</p>
         
-        <div className="flex mb-6 bg-black rounded-lg p-1">
+        <div className="flex mb-8 bg-black/40 rounded-xl p-1 border border-zinc-800">
           <button 
             onClick={() => setSetupType('M3U')}
-            className={`flex-1 py-2 rounded-md text-sm font-bold transition flex items-center justify-center gap-2 ${setupType === 'M3U' ? 'bg-zinc-800 text-white' : 'text-gray-500'}`}
+            className={`flex-1 py-3 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 uppercase tracking-widest ${setupType === 'M3U' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
-            <LinkIcon size={16} /> M3U
+            <LinkIcon size={14} /> M3U
           </button>
           <button 
             onClick={() => setSetupType('XC')}
-            className={`flex-1 py-2 rounded-md text-sm font-bold transition flex items-center justify-center gap-2 ${setupType === 'XC' ? 'bg-zinc-800 text-white' : 'text-gray-500'}`}
+            className={`flex-1 py-3 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 uppercase tracking-widest ${setupType === 'XC' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
-            <Database size={16} /> API Code
+            <Database size={14} /> API XC
           </button>
         </div>
 
         {errorMsg && (
-          <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg flex items-start gap-3 text-red-200 text-sm">
-            <AlertCircle className="shrink-0" size={18} />
-            <p>{errorMsg}</p>
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl flex items-start gap-3 text-red-400 text-sm animate-in fade-in slide-in-from-top-2">
+            <AlertCircle className="shrink-0" size={20} />
+            <div>
+              <p className="font-bold mb-1">Ops! Algo deu errado</p>
+              <p className="opacity-80 leading-relaxed">{errorMsg}</p>
+            </div>
           </div>
         )}
 
@@ -99,47 +102,59 @@ const App: React.FC = () => {
             <input
               type="text"
               placeholder="URL da Lista M3U"
-              className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
+              className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 text-white placeholder:text-zinc-600 focus:ring-2 focus:ring-red-600 outline-none transition-all"
               value={m3uUrl}
               onChange={(e) => setM3uUrl(e.target.value)}
             />
           </div>
         ) : (
-          <div className="space-y-4">
-            <input
-              type="text"
-              placeholder="Host (ex: http://cdnkdigital.top)"
-              className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
-              value={xcCreds.host}
-              onChange={(e) => setXcCreds({...xcCreds, host: e.target.value})}
-            />
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-5">
+            <div>
+              <label className="text-[10px] uppercase font-black text-zinc-500 mb-1.5 block ml-1">Endereço do Servidor (Host)</label>
               <input
                 type="text"
-                placeholder="Usuário"
-                className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
-                value={xcCreds.user}
-                onChange={(e) => setXcCreds({...xcCreds, user: e.target.value})}
+                placeholder="Ex: http://servidor.xyz:8080"
+                className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 text-white placeholder:text-zinc-600 focus:ring-2 focus:ring-red-600 outline-none transition-all"
+                value={xcCreds.host}
+                onChange={(e) => setXcCreds({...xcCreds, host: e.target.value})}
               />
-              <input
-                type="password"
-                placeholder="Senha"
-                className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
-                value={xcCreds.pass}
-                onChange={(e) => setXcCreds({...xcCreds, pass: e.target.value})}
-              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] uppercase font-black text-zinc-500 mb-1.5 block ml-1">Usuário</label>
+                <input
+                  type="text"
+                  placeholder="Seu user"
+                  className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 text-white placeholder:text-zinc-600 focus:ring-2 focus:ring-red-600 outline-none transition-all"
+                  value={xcCreds.user}
+                  onChange={(e) => setXcCreds({...xcCreds, user: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-black text-zinc-500 mb-1.5 block ml-1">Senha</label>
+                <input
+                  type="password"
+                  placeholder="Sua pass"
+                  className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 text-white placeholder:text-zinc-600 focus:ring-2 focus:ring-red-600 outline-none transition-all"
+                  value={xcCreds.pass}
+                  onChange={(e) => setXcCreds({...xcCreds, pass: e.target.value})}
+                />
+              </div>
             </div>
 
             <div 
               onClick={() => setXcCreds({...xcCreds, useProxy: !xcCreds.useProxy})}
-              className="flex items-center justify-between p-4 bg-zinc-800/50 rounded cursor-pointer hover:bg-zinc-800 transition"
+              className={`flex items-center justify-between p-4 rounded-xl cursor-pointer border transition-all ${xcCreds.useProxy ? 'bg-red-600/10 border-red-600/30' : 'bg-zinc-800/30 border-zinc-700/50'}`}
             >
               <div className="flex items-center gap-3">
-                {xcCreds.useProxy ? <ShieldCheck className="text-green-500" size={20} /> : <ShieldAlert className="text-yellow-500" size={20} />}
-                <span className="text-sm font-medium">Usar Proxy (Necessário)</span>
+                {xcCreds.useProxy ? <ShieldCheck className="text-red-500" size={20} /> : <ShieldAlert className="text-zinc-500" size={20} />}
+                <div>
+                   <p className="text-xs font-black uppercase tracking-tight">Usar Proxy de Segurança</p>
+                   <p className="text-[10px] text-zinc-500">Corrige erros de conexão no navegador</p>
+                </div>
               </div>
-              <div className={`w-10 h-5 rounded-full relative transition-colors ${xcCreds.useProxy ? 'bg-red-600' : 'bg-zinc-600'}`}>
-                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${xcCreds.useProxy ? 'left-6' : 'left-1'}`} />
+              <div className={`w-10 h-6 rounded-full relative transition-colors ${xcCreds.useProxy ? 'bg-red-600' : 'bg-zinc-700'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${xcCreds.useProxy ? 'left-5' : 'left-1'}`} />
               </div>
             </div>
           </div>
@@ -148,13 +163,20 @@ const App: React.FC = () => {
         <button
           onClick={() => handlePlaylistLoad(setupType)}
           disabled={loading}
-          className="w-full bg-red-600 hover:bg-red-700 font-bold py-4 rounded transition active:scale-95 flex items-center justify-center gap-2 mt-6"
+          className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 disabled:text-zinc-600 font-black py-4 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-red-900/20 flex items-center justify-center gap-3 mt-8 uppercase tracking-widest text-sm"
         >
-          {loading ? 'Processando...' : 'Acessar Agora'}
+          {loading ? (
+            <>
+              <RefreshCw className="animate-spin" size={20} />
+              Sincronizando Dados...
+            </>
+          ) : (
+            'Entrar no Sistema'
+          )}
         </button>
 
-        <p className="mt-6 text-center text-[10px] text-gray-500 uppercase tracking-widest font-bold">
-          Streaming Player Premium
+        <p className="mt-8 text-center text-[10px] text-zinc-600 uppercase tracking-[0.3em] font-black">
+          v2.0 Premium Build
         </p>
       </div>
     </div>
@@ -185,7 +207,7 @@ const App: React.FC = () => {
                       <Play size={24} fill="black" /> Assistir
                     </button>
                     <button onClick={() => setView('Setup')} className="bg-gray-500/50 text-white px-6 md:px-10 py-2.5 rounded font-bold flex items-center gap-2 hover:bg-gray-500/40 transition">
-                      Sair / Trocar Lista
+                      Trocar Lista
                     </button>
                   </div>
                 </div>
