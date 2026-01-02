@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { MessageSquare, Send, X, Bot } from 'lucide-react';
+import { Send, X, Bot } from 'lucide-react';
 import { IPTVItem, ChatMessage } from '../types';
 
 interface ManelAIProps {
@@ -32,8 +32,10 @@ const ManelAI: React.FC<ManelAIProps> = ({ playlistItems }) => {
     setIsTyping(true);
 
     try {
+      // Re-initialize GoogleGenAI right before making the API call as per guidelines
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Provide a summary of the playlist for context
+      
+      // Provide a summary of the playlist for context (limited to avoid huge prompts)
       const playlistSummary = playlistItems.slice(0, 50).map(i => `${i.name} (${i.group})`).join(', ');
       
       const chat = ai.chats.create({
@@ -48,8 +50,10 @@ const ManelAI: React.FC<ManelAIProps> = ({ playlistItems }) => {
       });
 
       const response = await chat.sendMessage({ message: userMsg });
+      // Accessing .text as a property as per current SDK guidelines
       setMessages(prev => [...prev, { role: 'model', text: response.text || 'Desculpe, deu um erro aqui.' }]);
     } catch (error) {
+      console.error('AI Error:', error);
       setMessages(prev => [...prev, { role: 'model', text: 'Opa, meu sinal caiu. Tenta de novo!' }]);
     } finally {
       setIsTyping(false);

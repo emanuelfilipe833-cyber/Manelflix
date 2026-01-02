@@ -22,7 +22,7 @@ export interface XCCredentials {
   pass: string;
 }
 
-// Added ChatMessage interface to fix the error in ManelAI.tsx
+// Added ChatMessage interface to resolve the import error in ManelAI.tsx
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
