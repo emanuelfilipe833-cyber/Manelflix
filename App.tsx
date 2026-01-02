@@ -7,12 +7,16 @@ import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import ContentRow from './components/ContentRow';
 import VideoPlayer from './components/VideoPlayer';
+import SeriesDetails from './components/SeriesDetails';
 import { AlertCircle, Trash2, Loader2, Play, Power, Signal, Search } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = React.useState<IPTVItem[]>([]);
   const [view, setView] = React.useState<ViewState>('Home');
   const [selectedItem, setSelectedItem] = React.useState<IPTVItem | null>(null);
+  const [selectedSeries, setSelectedSeries] = React.useState<IPTVItem | null>(null);
+  const [episodeToPlay, setEpisodeToPlay] = React.useState<{url: string, title: string} | null>(null);
+  
   const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('XC');
   const [loadingStatus, setLoadingStatus] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -55,14 +59,13 @@ const App: React.FC = () => {
         const res = await fetch(m3uUrl);
         data = parseM3U(await res.text());
       } else {
-        setLoadingStatus('Baixando catálogo (Isso pode demorar)...');
+        setLoadingStatus('Baixando catálogo...');
         data = await fetchXtreamCodes(xcCreds);
         localStorage.setItem('manelflix_creds', JSON.stringify(xcCreds));
       }
       
       if (data.length === 0) throw new Error('O servidor não enviou nenhum canal.');
       
-      setLoadingStatus('Quase pronto...');
       setItems(data);
       localStorage.setItem('manelflix_playlist', JSON.stringify(data));
       setView('Home');
@@ -74,13 +77,20 @@ const App: React.FC = () => {
     }
   };
 
+  const handleItemSelect = (item: IPTVItem) => {
+    if (item.group === 'Series') {
+      setSelectedSeries(item);
+    } else {
+      setSelectedItem(item);
+    }
+  };
+
   const clearCache = () => {
     localStorage.clear();
     setItems([]);
     setView('Setup');
   };
 
-  // Lógica de filtragem global baseada na busca
   const filteredItems = React.useMemo(() => {
     if (!searchQuery.trim()) return items;
     const lowerQuery = searchQuery.toLowerCase();
@@ -159,33 +169,24 @@ const App: React.FC = () => {
               </div>
             </div>
             
-            {filteredItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center border border-zinc-800">
-                  <Search size={32} className="text-zinc-700" />
-                </div>
-                <p className="text-zinc-500 font-bold uppercase text-xs tracking-widest">Nada encontrado com esses termos.</p>
-              </div>
-            ) : (
-              <div className="space-y-12">
-                {liveItems.length > 0 && <ContentRow title="Canais Encontrados" items={liveItems} onSelect={setSelectedItem} />}
-                {movieItems.length > 0 && <ContentRow title="Filmes Encontrados" items={movieItems} onSelect={setSelectedItem} />}
-                {seriesItems.length > 0 && <ContentRow title="Séries Encontradas" items={seriesItems} onSelect={setSelectedItem} />}
-              </div>
-            )}
+            <div className="space-y-12">
+              {liveItems.length > 0 && <ContentRow title="Canais Encontrados" items={liveItems} onSelect={handleItemSelect} />}
+              {movieItems.length > 0 && <ContentRow title="Filmes Encontrados" items={movieItems} onSelect={handleItemSelect} />}
+              {seriesItems.length > 0 && <ContentRow title="Séries Encontradas" items={seriesItems} onSelect={handleItemSelect} />}
+            </div>
           </div>
         ) : (
           <>
             {view === 'Home' && (
               <>
-                <ContentRow title="Canais Sugeridos" items={liveItems.slice(0, 30)} onSelect={setSelectedItem} />
-                <ContentRow title="Filmes Populares" items={movieItems.slice(0, 30)} onSelect={setSelectedItem} />
-                <ContentRow title="Séries em Destaque" items={seriesItems.slice(0, 30)} onSelect={setSelectedItem} />
+                <ContentRow title="Canais Sugeridos" items={liveItems.slice(0, 30)} onSelect={handleItemSelect} />
+                <ContentRow title="Filmes Populares" items={movieItems.slice(0, 30)} onSelect={handleItemSelect} />
+                <ContentRow title="Séries em Destaque" items={seriesItems.slice(0, 30)} onSelect={handleItemSelect} />
               </>
             )}
-            {view === 'Live' && <ContentRow title="Grade de Canais" items={liveItems} onSelect={setSelectedItem} />}
-            {view === 'Movies' && <ContentRow title="Todos os Filmes" items={movieItems} onSelect={setSelectedItem} />}
-            {view === 'Series' && <ContentRow title="Catálogo de Séries" items={seriesItems} onSelect={setSelectedItem} />}
+            {view === 'Live' && <ContentRow title="Grade de Canais" items={liveItems} onSelect={handleItemSelect} />}
+            {view === 'Movies' && <ContentRow title="Todos os Filmes" items={movieItems} onSelect={handleItemSelect} />}
+            {view === 'Series' && <ContentRow title="Catálogo de Séries" items={seriesItems} onSelect={handleItemSelect} />}
           </>
         )}
 
@@ -199,8 +200,33 @@ const App: React.FC = () => {
           </button>
         </div>
       </main>
+      
       <BottomNav activeView={view} setView={setView} />
-      {selectedItem && <VideoPlayer item={selectedItem} onClose={() => setSelectedItem(null)} creds={xcCreds} />}
+
+      {/* Series Selection View */}
+      {selectedSeries && (
+        <SeriesDetails 
+          item={selectedSeries} 
+          creds={xcCreds} 
+          onClose={() => setSelectedSeries(null)} 
+          onPlayEpisode={(url, title) => {
+            setEpisodeToPlay({ url, title });
+            setSelectedItem({ ...selectedSeries, url, name: title });
+          }}
+        />
+      )}
+
+      {/* Main Video Player */}
+      {selectedItem && (
+        <VideoPlayer 
+          item={selectedItem} 
+          onClose={() => {
+            setSelectedItem(null);
+            setEpisodeToPlay(null);
+          }} 
+          creds={xcCreds} 
+        />
+      )}
     </div>
   );
 };

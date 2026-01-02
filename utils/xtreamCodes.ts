@@ -1,5 +1,5 @@
 
-import { IPTVItem, XCCredentials } from '../types';
+import { IPTVItem, XCCredentials, SeriesInfo, Episode } from '../types';
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 30000) {
   const controller = new AbortController();
@@ -17,7 +17,6 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
 export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]> {
   let { host, user, pass, useProxy } = creds;
   
-  // Lógica de "Smart Paste": Se o usuário colar a URL completa com user e pass
   if (host.includes('username=') && host.includes('password=')) {
     const urlObj = new URL(host);
     const params = new URLSearchParams(urlObj.search);
@@ -32,17 +31,15 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
   
   const wrapUrl = (url: string) => {
     if (!useProxy) return url;
-    // Usamos o corsproxy.io que é o mais rápido para requisições de API
     return `https://corsproxy.io/?${encodeURIComponent(url)}`;
   };
 
   const authParams = `username=${user}&password=${pass}`;
-  // Adicionamos output=m3u8 na própria chamada de login
   const loginUrl = `${baseUrl}/player_api.php?${authParams}`;
 
   try {
     const response = await fetchWithTimeout(wrapUrl(loginUrl));
-    if (!response.ok) throw new Error(`Servidor não respondeu (Erro ${response.status})`);
+    if (!response.ok) throw new Error(`Servidor não respondeu.`);
     
     const data = await response.json();
     if (!data.user_info || data.user_info.auth === 0) {
@@ -57,12 +54,10 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
         const json = await res.json();
         return Array.isArray(json) ? json : [];
       } catch (e) {
-        console.warn(`Falha ao carregar ${action}`);
         return [];
       }
     };
 
-    // Carregamento paralelo das 3 listas (Igual ao Blink)
     const [live, vod, series] = await Promise.all([
       fetchAction('get_live_streams'),
       fetchAction('get_vod_streams'),
@@ -71,14 +66,13 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
 
     const items: IPTVItem[] = [];
 
-    // Processamento otimizado: Só adicionamos o que tem ID válido
     live.forEach((item: any) => {
       if (item.stream_id) {
         items.push({
           id: `live_${item.stream_id}`,
           name: item.name || 'Canal',
           logo: item.stream_icon || '',
-          url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.m3u8`, // HLS forçado
+          url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.m3u8`,
           category: item.category_name || 'TV',
           group: 'Live'
         });
@@ -114,13 +108,11 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
 
     return items;
   } catch (error: any) {
-    console.error('Erro de Conexão:', error);
-    if (error.name === 'AbortError') throw new Error('O servidor demorou muito para responder.');
-    throw new Error(error.message || 'Erro ao conectar com o servidor IPTV.');
+    throw new Error(error.message || 'Erro ao conectar com o servidor.');
   }
 }
 
-export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string): Promise<string> {
+export async function getSeriesInfo(creds: XCCredentials, seriesId: string): Promise<SeriesInfo> {
   const { host, user, pass, useProxy } = creds;
   let baseUrl = host.trim();
   if (!baseUrl.startsWith('http')) baseUrl = `http://${baseUrl}`;
@@ -130,20 +122,43 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
   try {
     const res = await fetchWithTimeout(useProxy ? `https://corsproxy.io/?${encodeURIComponent(url)}` : url);
     const data = await res.json();
-    if (data.episodes) {
-      const seasons = Object.keys(data.episodes);
-      if (seasons.length > 0) {
-        const firstSeason = data.episodes[seasons[0]];
-        const episode = Array.isArray(firstSeason) ? firstSeason[0] : firstSeason;
-        if (episode) {
-          const ext = episode.container_extension || 'mp4';
-          const streamId = episode.id || episode.stream_id;
-          return `${baseUrl}/series/${user}/${pass}/${streamId}.${ext}`;
-        }
-      }
-    }
-    throw new Error('Nenhum vídeo disponível.');
+    
+    if (!data.episodes) throw new Error('Nenhum episódio encontrado para esta série.');
+
+    const info = data.info || {};
+    return {
+      name: info.name || 'Série',
+      cover: info.cover || '',
+      plot: info.plot || 'Sem descrição disponível.',
+      cast: info.cast || '',
+      director: info.director || '',
+      genre: info.genre || '',
+      releaseDate: info.releaseDate || '',
+      rating: info.rating || 'N/A',
+      seasons: data.episodes
+    };
   } catch (e) {
-    throw new Error('Erro ao abrir episódio.');
+    throw new Error('Falha ao carregar detalhes da série.');
   }
+}
+
+export function getEpisodeStreamUrl(creds: XCCredentials, episodeId: string, ext: string = 'mp4'): string {
+  const { host, user, pass } = creds;
+  let baseUrl = host.trim();
+  if (!baseUrl.startsWith('http')) baseUrl = `http://${baseUrl}`;
+  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+  return `${baseUrl}/series/${user}/${pass}/${episodeId}.${ext}`;
+}
+
+// Deprecated in favor of detailed series info, but kept for compatibility
+export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string): Promise<string> {
+  const info = await getSeriesInfo(creds, seriesId);
+  const seasonKeys = Object.keys(info.seasons);
+  if (seasonKeys.length > 0) {
+    const firstSeason = info.seasons[seasonKeys[0]];
+    if (firstSeason.length > 0) {
+      return getEpisodeStreamUrl(creds, firstSeason[0].id, firstSeason[0].container_extension);
+    }
+  }
+  throw new Error('Série vazia.');
 }
