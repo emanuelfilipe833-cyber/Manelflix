@@ -1,5 +1,5 @@
 
-import { IPTVItem, XCCredentials, SeriesInfo, Episode } from '../types';
+import { IPTVItem, XCCredentials, SeriesInfo, Episode, IPTVCategory } from '../types';
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 40000) {
   const controller = new AbortController();
@@ -14,7 +14,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
   }
 }
 
-export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]> {
+export async function fetchXtreamData(creds: XCCredentials): Promise<{ items: IPTVItem[], categories: IPTVCategory[] }> {
   let { host, user, pass, useProxy } = creds;
   
   if (host.includes('username=') && host.includes('password=')) {
@@ -34,45 +34,48 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
     return `https://corsproxy.io/?${encodeURIComponent(url)}`;
   };
 
-  const authParams = `username=${user}&password=${pass}`;
+  const auth = `username=${user}&password=${pass}`;
 
   try {
-    // 1. LOGIN
-    const loginUrl = `${baseUrl}/player_api.php?${authParams}`;
-    const loginRes = await fetchWithTimeout(wrapUrl(loginUrl));
-    const loginData = await loginRes.json();
-    
-    if (!loginData.user_info || loginData.user_info.auth === 0) {
-      throw new Error('Acesso Negado: Usuário ou Senha incorretos.');
-    }
+    const fetchAction = async (action: string) => {
+      const url = `${baseUrl}/player_api.php?${auth}&action=${action}`;
+      const res = await fetchWithTimeout(wrapUrl(url));
+      return await res.json();
+    };
+
+    // 1. Buscar Categorias primeiro (Mais rápido)
+    const [catLive, catVod, catSer] = await Promise.all([
+      fetchAction('get_live_categories'),
+      fetchAction('get_vod_categories'),
+      fetchAction('get_series_categories')
+    ]);
+
+    const categories: IPTVCategory[] = [
+      ...catLive.map((c: any) => ({ id: c.category_id, name: c.category_name, group: 'Live' })),
+      ...catVod.map((c: any) => ({ id: c.category_id, name: c.category_name, group: 'Movie' })),
+      ...catSer.map((c: any) => ({ id: c.category_id, name: c.category_name, group: 'Series' }))
+    ];
+
+    // 2. Buscar Canais/Filmes/Séries
+    const [live, vod, series] = await Promise.all([
+      fetchAction('get_live_streams'),
+      fetchAction('get_vod_streams'),
+      fetchAction('get_series')
+    ]);
 
     const items: IPTVItem[] = [];
 
-    const fetchAction = async (action: string) => {
-      try {
-        const url = `${baseUrl}/player_api.php?${authParams}&action=${action}`;
-        const res = await fetchWithTimeout(wrapUrl(url));
-        if (!res.ok) return [];
-        return await res.json();
-      } catch (e) {
-        console.error(`Erro em ${action}:`, e);
-        return [];
-      }
-    };
-
-    // Buscamos um por um para não sobrecarregar servidores mais simples
-    const live = await fetchAction('get_live_streams');
-    const vod = await fetchAction('get_vod_streams');
-    const series = await fetchAction('get_series');
+    const catMap = new Map(categories.map(c => [c.id, c.name]));
 
     if (Array.isArray(live)) {
       live.forEach((item: any) => {
-        if (item.stream_id) items.push({
+        items.push({
           id: `live_${item.stream_id}`,
-          name: item.name || 'Canal',
+          name: item.name,
           logo: item.stream_icon || '',
           url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.m3u8`,
-          category: item.category_name || 'TV',
+          category_id: item.category_id,
+          category_name: catMap.get(item.category_id) || 'Outros',
           group: 'Live'
         });
       });
@@ -80,36 +83,36 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
 
     if (Array.isArray(vod)) {
       vod.forEach((item: any) => {
-        if (item.stream_id) {
-          const ext = item.container_extension || 'mp4';
-          items.push({
-            id: `vod_${item.stream_id}`,
-            name: item.name || 'Filme',
-            logo: item.stream_icon || '',
-            url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${ext}`,
-            category: item.category_name || 'Filmes',
-            group: 'Movie'
-          });
-        }
+        const ext = item.container_extension || 'mp4';
+        items.push({
+          id: `vod_${item.stream_id}`,
+          name: item.name,
+          logo: item.stream_icon || '',
+          url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${ext}`,
+          category_id: item.category_id,
+          category_name: catMap.get(item.category_id) || 'Filmes',
+          group: 'Movie'
+        });
       });
     }
 
     if (Array.isArray(series)) {
       series.forEach((item: any) => {
-        if (item.series_id) items.push({
+        items.push({
           id: `series_${item.series_id}`,
-          name: item.name || 'Série',
+          name: item.name,
           logo: item.cover || '',
-          url: `SERIES_ID:${item.series_id}`, 
-          category: item.category_name || 'Séries',
+          url: `SERIES_ID:${item.series_id}`,
+          category_id: item.category_id,
+          category_name: catMap.get(item.category_id) || 'Séries',
           group: 'Series'
         });
       });
     }
 
-    return items;
-  } catch (error: any) {
-    throw new Error(error.message || 'Erro ao conectar com o servidor.');
+    return { items, categories };
+  } catch (e: any) {
+    throw new Error('Falha na comunicação com o servidor IPTV.');
   }
 }
 
@@ -120,45 +123,34 @@ export async function getSeriesInfo(creds: XCCredentials, seriesId: string): Pro
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
   const url = `${baseUrl}/player_api.php?username=${user}&password=${pass}&action=get_series_info&series_id=${seriesId}`;
-  try {
-    const res = await fetchWithTimeout(useProxy ? `https://corsproxy.io/?${encodeURIComponent(url)}` : url);
-    const data = await res.json();
-    
-    if (!data.episodes) throw new Error('Esta série está vazia no servidor.');
+  const res = await fetchWithTimeout(useProxy ? `https://corsproxy.io/?${encodeURIComponent(url)}` : url);
+  const data = await res.json();
+  
+  const rawEpisodes = data.episodes || {};
+  const normalizedSeasons: { [key: string]: Episode[] } = {};
 
-    // Normalizar episódios: Xtream Codes as vezes retorna objeto { "1": [...], "2": [...] }
-    const rawEpisodes = data.episodes;
-    const normalizedSeasons: { [key: string]: Episode[] } = {};
+  Object.keys(rawEpisodes).forEach(seasonNum => {
+    normalizedSeasons[seasonNum] = rawEpisodes[seasonNum].map((ep: any) => ({
+      id: ep.id || ep.stream_id,
+      title: ep.title || `Episódio ${ep.episode_num}`,
+      container_extension: ep.container_extension || 'mp4',
+      season: parseInt(seasonNum),
+      episode_num: parseInt(ep.episode_num),
+      info: ep.info || {}
+    }));
+  });
 
-    Object.keys(rawEpisodes).forEach(seasonNum => {
-      const seasonData = rawEpisodes[seasonNum];
-      if (Array.isArray(seasonData)) {
-        normalizedSeasons[seasonNum] = seasonData.map((ep: any) => ({
-          id: ep.id || ep.stream_id,
-          title: ep.title || `Episódio ${ep.episode_num}`,
-          container_extension: ep.container_extension || 'mp4',
-          season: parseInt(seasonNum),
-          episode_num: parseInt(ep.episode_num),
-          info: ep.info || {}
-        }));
-      }
-    });
-
-    const info = data.info || {};
-    return {
-      name: info.name || 'Série',
-      cover: info.cover || '',
-      plot: info.plot || 'Sem descrição.',
-      cast: info.cast || '',
-      director: info.director || '',
-      genre: info.genre || '',
-      releaseDate: info.releaseDate || '',
-      rating: info.rating || 'N/A',
-      seasons: normalizedSeasons
-    };
-  } catch (e) {
-    throw new Error('Falha ao abrir temporadas.');
-  }
+  return {
+    name: data.info?.name || 'Série',
+    cover: data.info?.cover || '',
+    plot: data.info?.plot || '',
+    cast: data.info?.cast || '',
+    director: data.info?.director || '',
+    genre: data.info?.genre || '',
+    releaseDate: data.info?.releaseDate || '',
+    rating: data.info?.rating || 'N/A',
+    seasons: normalizedSeasons
+  };
 }
 
 export function getEpisodeStreamUrl(creds: XCCredentials, episodeId: string, ext: string = 'mp4'): string {
@@ -174,9 +166,7 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
   const seasons = Object.keys(info.seasons);
   if (seasons.length > 0) {
     const episodes = info.seasons[seasons[0]];
-    if (episodes.length > 0) {
-      return getEpisodeStreamUrl(creds, episodes[0].id, episodes[0].container_extension);
-    }
+    return getEpisodeStreamUrl(creds, episodes[0].id, episodes[0].container_extension);
   }
   throw new Error('Sem episódios.');
 }

@@ -31,11 +31,13 @@ export function parseM3U(m3uContent: string): IPTVItem[] {
       if (catLower.includes('movie') || catLower.includes('filme')) group = 'Movie';
       else if (catLower.includes('series') || catLower.includes('serie')) group = 'Series';
 
+      // Fix: Use category_id and category_name instead of category to match the IPTVItem interface.
       currentItem = {
         id: Math.random().toString(36).substr(2, 9),
         name,
         logo,
-        category,
+        category_id: category,
+        category_name: category,
         group
       };
     } else if (line.startsWith('http') && currentItem.name) {

@@ -4,7 +4,14 @@ export interface IPTVItem {
   name: string;
   logo: string;
   url: string;
-  category: string;
+  category_id: string;
+  category_name: string;
+  group: 'Live' | 'Movie' | 'Series';
+}
+
+export interface IPTVCategory {
+  id: string;
+  name: string;
   group: 'Live' | 'Movie' | 'Series';
 }
 
