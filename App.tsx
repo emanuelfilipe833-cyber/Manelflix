@@ -3,6 +3,7 @@ import React from 'react';
 import { IPTVItem, ViewState, XCCredentials } from './types';
 import { parseM3U } from './utils/m3uParser';
 import { fetchXtreamCodes } from './utils/xtreamCodes';
+import { savePlaylist, getPlaylist } from './utils/db';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import ContentRow from './components/ContentRow';
@@ -15,8 +16,6 @@ const App: React.FC = () => {
   const [view, setView] = React.useState<ViewState>('Home');
   const [selectedItem, setSelectedItem] = React.useState<IPTVItem | null>(null);
   const [selectedSeries, setSelectedSeries] = React.useState<IPTVItem | null>(null);
-  const [episodeToPlay, setEpisodeToPlay] = React.useState<{url: string, title: string} | null>(null);
-  
   const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('XC');
   const [loadingStatus, setLoadingStatus] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -31,27 +30,21 @@ const App: React.FC = () => {
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const saved = localStorage.getItem('manelflix_playlist');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setItems(parsed);
-        } else {
-          setView('Setup');
-        }
-      } catch (e) {
+    async function init() {
+      const data = await getPlaylist();
+      if (data && data.length > 0) {
+        setItems(data);
+      } else {
         setView('Setup');
       }
-    } else {
-      setView('Setup');
     }
+    init();
   }, []);
 
   const handlePlaylistLoad = async () => {
     setLoading(true);
     setErrorMsg(null);
-    setLoadingStatus('Conectando ao servidor...');
+    setLoadingStatus('Conectando...');
     
     try {
       let data: IPTVItem[] = [];
@@ -59,18 +52,19 @@ const App: React.FC = () => {
         const res = await fetch(m3uUrl);
         data = parseM3U(await res.text());
       } else {
-        setLoadingStatus('Baixando catálogo...');
+        setLoadingStatus('Baixando Canais...');
         data = await fetchXtreamCodes(xcCreds);
         localStorage.setItem('manelflix_creds', JSON.stringify(xcCreds));
       }
       
-      if (data.length === 0) throw new Error('O servidor não enviou nenhum canal.');
+      if (data.length === 0) throw new Error('Lista vazia ou servidor offline.');
       
+      setLoadingStatus('Otimizando Banco de Dados...');
+      await savePlaylist(data);
       setItems(data);
-      localStorage.setItem('manelflix_playlist', JSON.stringify(data));
       setView('Home');
     } catch (e: any) {
-      setErrorMsg(e.message || 'Erro inesperado.');
+      setErrorMsg(e.message || 'Erro ao carregar.');
     } finally {
       setLoading(false);
       setLoadingStatus('');
@@ -87,8 +81,12 @@ const App: React.FC = () => {
 
   const clearCache = () => {
     localStorage.clear();
-    setItems([]);
-    setView('Setup');
+    const request = indexedDB.deleteDatabase('ManelflixDB');
+    request.onsuccess = () => {
+      setItems([]);
+      setView('Setup');
+      window.location.reload();
+    };
   };
 
   const filteredItems = React.useMemo(() => {
@@ -111,7 +109,7 @@ const App: React.FC = () => {
           <div className="text-center">
             <h1 className="text-5xl font-black text-red-600 tracking-tighter italic uppercase">Manelflix</h1>
             <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.4em] mt-2 flex items-center justify-center gap-2">
-              <Signal size={10} className="text-green-500" /> Motor Blink 2024
+              <Signal size={10} className="text-green-500" /> Xtream Engine v9.0
             </p>
           </div>
 
@@ -121,7 +119,7 @@ const App: React.FC = () => {
           </div>
 
           {errorMsg && (
-            <div className="p-4 bg-red-600/10 border border-red-600/20 rounded-2xl text-red-500 text-[11px] font-black uppercase flex items-center gap-3">
+            <div className="p-4 bg-red-600/10 border border-red-600/20 rounded-2xl text-red-500 text-[11px] font-black uppercase flex items-center gap-3 animate-bounce">
               <AlertCircle size={18} /> {errorMsg}
             </div>
           )}
@@ -131,7 +129,7 @@ const App: React.FC = () => {
               <input type="text" placeholder="URL M3U" className="w-full bg-black/60 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-xs font-bold uppercase transition-all" value={m3uUrl} onChange={e => setM3uUrl(e.target.value)} />
             ) : (
               <>
-                <input type="text" placeholder="URL OU HOST (EX: HTTP://...)" className="w-full bg-black/60 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-xs font-bold uppercase transition-all" value={xcCreds.host} onChange={e => setXcCreds({...xcCreds, host: e.target.value})} />
+                <input type="text" placeholder="URL/HOST (EX: HTTP://MYDNS.COM:8080)" className="w-full bg-black/60 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-xs font-bold uppercase transition-all" value={xcCreds.host} onChange={e => setXcCreds({...xcCreds, host: e.target.value})} />
                 <div className="grid grid-cols-2 gap-4">
                   <input type="text" placeholder="USER" className="w-full bg-black/60 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-xs font-bold uppercase transition-all" value={xcCreds.user} onChange={e => setXcCreds({...xcCreds, user: e.target.value})} />
                   <input type="password" placeholder="PASS" className="w-full bg-black/60 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-xs font-bold uppercase transition-all" value={xcCreds.pass} onChange={e => setXcCreds({...xcCreds, pass: e.target.value})} />
@@ -146,7 +144,7 @@ const App: React.FC = () => {
                 <Loader2 className="animate-spin" size={20} />
                 <span className="text-[8px] opacity-70 tracking-widest">{loadingStatus}</span>
               </>
-            ) : <><Play size={18} fill="white"/> Conectar Agora</>}
+            ) : <><Play size={18} fill="white"/> Conectar Conta</>}
           </button>
         </div>
       </div>
@@ -154,39 +152,30 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-black text-white selection:bg-red-600/30">
       <Header onSearch={setSearchQuery} />
-      <main className="pt-24 pb-32 space-y-16 animate-in fade-in duration-500">
+      <main className="pt-24 pb-32 space-y-16">
         {searchQuery ? (
           <div className="px-4 md:px-12 pt-8">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="p-4 bg-red-600 rounded-2xl shadow-lg shadow-red-900/40">
-                <Search size={24} className="text-white" />
-              </div>
-              <div>
-                <h2 className="text-3xl font-black uppercase tracking-tighter italic">Resultados</h2>
-                <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">Encontrados {filteredItems.length} itens para "{searchQuery}"</p>
-              </div>
-            </div>
-            
+            <h2 className="text-3xl font-black uppercase mb-8">Resultados para: {searchQuery}</h2>
             <div className="space-y-12">
-              {liveItems.length > 0 && <ContentRow title="Canais Encontrados" items={liveItems} onSelect={handleItemSelect} />}
-              {movieItems.length > 0 && <ContentRow title="Filmes Encontrados" items={movieItems} onSelect={handleItemSelect} />}
-              {seriesItems.length > 0 && <ContentRow title="Séries Encontradas" items={seriesItems} onSelect={handleItemSelect} />}
+              {liveItems.length > 0 && <ContentRow title="Canais" items={liveItems} onSelect={handleItemSelect} />}
+              {movieItems.length > 0 && <ContentRow title="Filmes" items={movieItems} onSelect={handleItemSelect} />}
+              {seriesItems.length > 0 && <ContentRow title="Séries" items={seriesItems} onSelect={handleItemSelect} />}
             </div>
           </div>
         ) : (
           <>
             {view === 'Home' && (
               <>
-                <ContentRow title="Canais Sugeridos" items={liveItems.slice(0, 30)} onSelect={handleItemSelect} />
-                <ContentRow title="Filmes Populares" items={movieItems.slice(0, 30)} onSelect={handleItemSelect} />
-                <ContentRow title="Séries em Destaque" items={seriesItems.slice(0, 30)} onSelect={handleItemSelect} />
+                <ContentRow title="Canais Recomendados" items={liveItems.slice(0, 40)} onSelect={handleItemSelect} />
+                <ContentRow title="Filmes Adicionados" items={movieItems.slice(0, 40)} onSelect={handleItemSelect} />
+                <ContentRow title="Séries em Destaque" items={seriesItems.slice(0, 40)} onSelect={handleItemSelect} />
               </>
             )}
-            {view === 'Live' && <ContentRow title="Grade de Canais" items={liveItems} onSelect={handleItemSelect} />}
-            {view === 'Movies' && <ContentRow title="Todos os Filmes" items={movieItems} onSelect={handleItemSelect} />}
-            {view === 'Series' && <ContentRow title="Catálogo de Séries" items={seriesItems} onSelect={handleItemSelect} />}
+            {view === 'Live' && <ContentRow title="Canais Ao Vivo" items={liveItems} onSelect={handleItemSelect} />}
+            {view === 'Movies' && <ContentRow title="Catálogo de Filmes" items={movieItems} onSelect={handleItemSelect} />}
+            {view === 'Series' && <ContentRow title="Séries Completas" items={seriesItems} onSelect={handleItemSelect} />}
           </>
         )}
 
@@ -194,8 +183,8 @@ const App: React.FC = () => {
           <button onClick={clearCache} className="group flex items-center gap-4 bg-zinc-900/30 hover:bg-red-600/10 border border-zinc-800 p-6 rounded-[2rem] transition-all">
             <Power size={20} className="text-zinc-600 group-hover:text-red-600" />
             <div className="text-left">
-              <span className="block text-[10px] font-black uppercase text-zinc-500 group-hover:text-red-500 tracking-[0.2em]">Sair da Conta</span>
-              <span className="block text-[8px] font-bold text-zinc-700 uppercase">Limpar cache do servidor</span>
+              <span className="block text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em]">Logout</span>
+              <span className="block text-[8px] font-bold text-zinc-700 uppercase">Limpar Banco de Dados</span>
             </div>
           </button>
         </div>
@@ -203,27 +192,21 @@ const App: React.FC = () => {
       
       <BottomNav activeView={view} setView={setView} />
 
-      {/* Series Selection View */}
       {selectedSeries && (
         <SeriesDetails 
           item={selectedSeries} 
           creds={xcCreds} 
           onClose={() => setSelectedSeries(null)} 
           onPlayEpisode={(url, title) => {
-            setEpisodeToPlay({ url, title });
             setSelectedItem({ ...selectedSeries, url, name: title });
           }}
         />
       )}
 
-      {/* Main Video Player */}
       {selectedItem && (
         <VideoPlayer 
           item={selectedItem} 
-          onClose={() => {
-            setSelectedItem(null);
-            setEpisodeToPlay(null);
-          }} 
+          onClose={() => setSelectedItem(null)} 
           creds={xcCreds} 
         />
       )}
