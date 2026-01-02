@@ -62,6 +62,7 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
           id: `vod_${item.stream_id}`,
           name: item.name,
           logo: item.stream_icon,
+          // Xtream Codes VOD URL: host/movie/user/pass/id.ext
           url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${ext}`,
           category: item.category_name || 'Filmes',
           group: 'Movie'
@@ -70,15 +71,12 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
     }
 
     // Séries
-    // Nota: Séries no XC exigem get_series_info para pegar episódios.
-    // Para simplificar, vamos salvar o series_id. O Player ou App terá que lidar com isso.
     if (Array.isArray(series)) {
       series.forEach((item: any) => {
         items.push({
           id: `series_${item.series_id}`,
           name: item.name,
           logo: item.cover,
-          // Guardamos o ID da série na URL para processar depois se necessário
           url: `SERIES_ID:${item.series_id}`, 
           category: item.category_name || 'Séries',
           group: 'Series'
@@ -93,9 +91,6 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
   }
 }
 
-/**
- * Função auxiliar para buscar o link do primeiro episódio de uma série
- */
 export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string): Promise<string> {
   const { host, user, pass, useProxy } = creds;
   let baseUrl = host.trim();
@@ -109,17 +104,21 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
     const res = await fetch(wrapUrl(url));
     const data = await res.json();
     
-    // XC retorna episódios organizados por temporadas (seasons)
-    if (data.episodes) {
-      const firstSeasonKey = Object.keys(data.episodes)[0];
-      const firstEpisode = data.episodes[firstSeasonKey][0];
+    if (data.episodes && Object.keys(data.episodes).length > 0) {
+      const seasons = Object.keys(data.episodes);
+      const firstSeason = data.episodes[seasons[0]];
+      const firstEpisode = Array.isArray(firstSeason) ? firstSeason[0] : firstSeason;
+      
       if (firstEpisode) {
         const ext = firstEpisode.container_extension || 'mp4';
-        return `${baseUrl}/series/${user}/${pass}/${firstEpisode.id}.${ext}`;
+        const streamId = firstEpisode.id || firstEpisode.stream_id;
+        // Xtream Codes Series URL: host/series/user/pass/id.ext
+        return `${baseUrl}/series/${user}/${pass}/${streamId}.${ext}`;
       }
     }
-    throw new Error('Nenhum episódio encontrado.');
+    throw new Error('Nenhum episódio disponível.');
   } catch (e) {
+    console.error('Series info error:', e);
     throw e;
   }
 }
