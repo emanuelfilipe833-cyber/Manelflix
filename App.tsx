@@ -7,7 +7,7 @@ import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import ContentRow from './components/ContentRow';
 import VideoPlayer from './components/VideoPlayer';
-import { AlertCircle, Trash2, Loader2, Play, Power, Signal } from 'lucide-react';
+import { AlertCircle, Trash2, Loader2, Play, Power, Signal, Search } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = React.useState<IPTVItem[]>([]);
@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [selectedItem, setSelectedItem] = React.useState<IPTVItem | null>(null);
   const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('XC');
   const [loadingStatus, setLoadingStatus] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
   
   const [m3uUrl, setM3uUrl] = React.useState('');
   const [xcCreds, setXcCreds] = React.useState<XCCredentials>(() => {
@@ -29,7 +30,12 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('manelflix_playlist');
     if (saved) {
       try {
-        setItems(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setItems(parsed);
+        } else {
+          setView('Setup');
+        }
       } catch (e) {
         setView('Setup');
       }
@@ -74,9 +80,19 @@ const App: React.FC = () => {
     setView('Setup');
   };
 
-  const liveItems = items.filter(i => i.group === 'Live');
-  const movieItems = items.filter(i => i.group === 'Movie');
-  const seriesItems = items.filter(i => i.group === 'Series');
+  // Lógica de filtragem global baseada na busca
+  const filteredItems = React.useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    const lowerQuery = searchQuery.toLowerCase();
+    return items.filter(item => 
+      item.name.toLowerCase().includes(lowerQuery) || 
+      item.category.toLowerCase().includes(lowerQuery)
+    );
+  }, [items, searchQuery]);
+
+  const liveItems = filteredItems.filter(i => i.group === 'Live');
+  const movieItems = filteredItems.filter(i => i.group === 'Movie');
+  const seriesItems = filteredItems.filter(i => i.group === 'Series');
 
   if (view === 'Setup') {
     return (
@@ -90,8 +106,8 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex bg-black p-1 rounded-2xl border border-zinc-800">
-            <button onClick={() => setSetupType('M3U')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase transition-all ${setupType === 'M3U' ? 'bg-red-600 text-white' : 'text-zinc-500'}`}>Link M3U</button>
-            <button onClick={() => setSetupType('XC')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase transition-all ${setupType === 'XC' ? 'bg-red-600 text-white' : 'text-zinc-500'}`}>API Xtream</button>
+            <button onClick={() => setSetupType('M3U')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase transition-all ${setupType === 'M3U' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-500'}`}>Link M3U</button>
+            <button onClick={() => setSetupType('XC')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase transition-all ${setupType === 'XC' ? 'bg-red-600 text-white shadow-lg' : 'text-zinc-500'}`}>API Xtream</button>
           </div>
 
           {errorMsg && (
@@ -129,22 +145,57 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header onSearch={() => {}} />
-      <main className="pt-24 pb-32 space-y-16">
-        {view === 'Home' && (
+      <Header onSearch={setSearchQuery} />
+      <main className="pt-24 pb-32 space-y-16 animate-in fade-in duration-500">
+        {searchQuery ? (
+          <div className="px-4 md:px-12 pt-8">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="p-4 bg-red-600 rounded-2xl shadow-lg shadow-red-900/40">
+                <Search size={24} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-3xl font-black uppercase tracking-tighter italic">Resultados</h2>
+                <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">Encontrados {filteredItems.length} itens para "{searchQuery}"</p>
+              </div>
+            </div>
+            
+            {filteredItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center border border-zinc-800">
+                  <Search size={32} className="text-zinc-700" />
+                </div>
+                <p className="text-zinc-500 font-bold uppercase text-xs tracking-widest">Nada encontrado com esses termos.</p>
+              </div>
+            ) : (
+              <div className="space-y-12">
+                {liveItems.length > 0 && <ContentRow title="Canais Encontrados" items={liveItems} onSelect={setSelectedItem} />}
+                {movieItems.length > 0 && <ContentRow title="Filmes Encontrados" items={movieItems} onSelect={setSelectedItem} />}
+                {seriesItems.length > 0 && <ContentRow title="Séries Encontradas" items={seriesItems} onSelect={setSelectedItem} />}
+              </div>
+            )}
+          </div>
+        ) : (
           <>
-            <ContentRow title="Destaques TV" items={liveItems.slice(0, 30)} onSelect={setSelectedItem} />
-            <ContentRow title="Filmes Adicionados" items={movieItems.slice(0, 30)} onSelect={setSelectedItem} />
-            <ContentRow title="Séries em Alta" items={seriesItems.slice(0, 30)} onSelect={setSelectedItem} />
+            {view === 'Home' && (
+              <>
+                <ContentRow title="Canais Sugeridos" items={liveItems.slice(0, 30)} onSelect={setSelectedItem} />
+                <ContentRow title="Filmes Populares" items={movieItems.slice(0, 30)} onSelect={setSelectedItem} />
+                <ContentRow title="Séries em Destaque" items={seriesItems.slice(0, 30)} onSelect={setSelectedItem} />
+              </>
+            )}
+            {view === 'Live' && <ContentRow title="Grade de Canais" items={liveItems} onSelect={setSelectedItem} />}
+            {view === 'Movies' && <ContentRow title="Todos os Filmes" items={movieItems} onSelect={setSelectedItem} />}
+            {view === 'Series' && <ContentRow title="Catálogo de Séries" items={seriesItems} onSelect={setSelectedItem} />}
           </>
         )}
-        {view === 'Live' && <ContentRow title="Canais Ao Vivo" items={liveItems} onSelect={setSelectedItem} />}
-        {view === 'Movies' && <ContentRow title="Catálogo Completo" items={movieItems} onSelect={setSelectedItem} />}
-        {view === 'Series' && <ContentRow title="Todas as Séries" items={seriesItems} onSelect={setSelectedItem} />}
 
         <div className="flex justify-center p-12">
-          <button onClick={clearCache} className="text-zinc-600 hover:text-red-600 flex items-center gap-2 font-black text-[9px] uppercase tracking-widest transition">
-            <Trash2 size={16} /> Limpar Dados e Sair
+          <button onClick={clearCache} className="group flex items-center gap-4 bg-zinc-900/30 hover:bg-red-600/10 border border-zinc-800 p-6 rounded-[2rem] transition-all">
+            <Power size={20} className="text-zinc-600 group-hover:text-red-600" />
+            <div className="text-left">
+              <span className="block text-[10px] font-black uppercase text-zinc-500 group-hover:text-red-500 tracking-[0.2em]">Sair da Conta</span>
+              <span className="block text-[8px] font-bold text-zinc-700 uppercase">Limpar cache do servidor</span>
+            </div>
           </button>
         </div>
       </main>
