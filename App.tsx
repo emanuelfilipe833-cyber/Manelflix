@@ -13,14 +13,14 @@ const App: React.FC = () => {
   const [items, setItems] = React.useState<IPTVItem[]>([]);
   const [view, setView] = React.useState<ViewState>('Home');
   const [selectedItem, setSelectedItem] = React.useState<IPTVItem | null>(null);
-  const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('M3U');
+  const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('XC'); // Default para XC já que é o que o usuário está usando
   
   const [m3uUrl, setM3uUrl] = React.useState('');
   const [xcCreds, setXcCreds] = React.useState<XCCredentials>({ 
     host: '', 
     user: '', 
     pass: '', 
-    useProxy: true // Default to true as it's almost always needed for browser IPTV
+    useProxy: true 
   });
   
   const [loading, setLoading] = React.useState(false);
@@ -69,7 +69,8 @@ const App: React.FC = () => {
   const renderSetup = () => (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-20">
       <div className="max-w-md w-full bg-zinc-900/50 p-8 rounded-xl border border-zinc-800 backdrop-blur-sm">
-        <h2 className="text-3xl font-bold mb-6 text-center text-red-600">Manelflix</h2>
+        <h2 className="text-3xl font-bold mb-2 text-center text-red-600">Manelflix</h2>
+        <p className="text-gray-500 text-center mb-6 text-sm">Insira seus dados para começar</p>
         
         <div className="flex mb-6 bg-black rounded-lg p-1">
           <button 
@@ -107,7 +108,7 @@ const App: React.FC = () => {
           <div className="space-y-4">
             <input
               type="text"
-              placeholder="Host (ex: http://exemplo.com:8080)"
+              placeholder="Host (ex: http://cdnkdigital.top)"
               className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
               value={xcCreds.host}
               onChange={(e) => setXcCreds({...xcCreds, host: e.target.value})}
@@ -135,7 +136,7 @@ const App: React.FC = () => {
             >
               <div className="flex items-center gap-3">
                 {xcCreds.useProxy ? <ShieldCheck className="text-green-500" size={20} /> : <ShieldAlert className="text-yellow-500" size={20} />}
-                <span className="text-sm font-medium">Usar Proxy (Necessário para erro de CORS)</span>
+                <span className="text-sm font-medium">Usar Proxy (Necessário)</span>
               </div>
               <div className={`w-10 h-5 rounded-full relative transition-colors ${xcCreds.useProxy ? 'bg-red-600' : 'bg-zinc-600'}`}>
                 <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${xcCreds.useProxy ? 'left-6' : 'left-1'}`} />
@@ -149,7 +150,7 @@ const App: React.FC = () => {
           disabled={loading}
           className="w-full bg-red-600 hover:bg-red-700 font-bold py-4 rounded transition active:scale-95 flex items-center justify-center gap-2 mt-6"
         >
-          {loading ? 'Validando Acesso...' : 'Acessar Agora'}
+          {loading ? 'Processando...' : 'Acessar Agora'}
         </button>
 
         <p className="mt-6 text-center text-[10px] text-gray-500 uppercase tracking-widest font-bold">
@@ -184,7 +185,7 @@ const App: React.FC = () => {
                       <Play size={24} fill="black" /> Assistir
                     </button>
                     <button onClick={() => setView('Setup')} className="bg-gray-500/50 text-white px-6 md:px-10 py-2.5 rounded font-bold flex items-center gap-2 hover:bg-gray-500/40 transition">
-                      Configurações
+                      Sair / Trocar Lista
                     </button>
                   </div>
                 </div>
