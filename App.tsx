@@ -7,8 +7,7 @@ import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import ContentRow from './components/ContentRow';
 import VideoPlayer from './components/VideoPlayer';
-import ManelAI from './components/ManelAI';
-import { Play, Info, Database, Link as LinkIcon } from 'lucide-react';
+import { Play, Info, Database, Link as LinkIcon, AlertCircle, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = React.useState<IPTVItem[]>([]);
@@ -16,11 +15,16 @@ const App: React.FC = () => {
   const [selectedItem, setSelectedItem] = React.useState<IPTVItem | null>(null);
   const [setupType, setSetupType] = React.useState<'M3U' | 'XC'>('M3U');
   
-  // Setup inputs
   const [m3uUrl, setM3uUrl] = React.useState('');
-  const [xcCreds, setXcCreds] = React.useState<XCCredentials>({ host: '', user: '', pass: '' });
+  const [xcCreds, setXcCreds] = React.useState<XCCredentials>({ 
+    host: '', 
+    user: '', 
+    pass: '', 
+    useProxy: true // Default to true as it's almost always needed for browser IPTV
+  });
   
   const [loading, setLoading] = React.useState(false);
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const saved = localStorage.getItem('manelflix_playlist');
@@ -33,6 +37,7 @@ const App: React.FC = () => {
 
   const handlePlaylistLoad = async (type: 'M3U' | 'XC') => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       let parsedItems: IPTVItem[] = [];
       if (type === 'M3U') {
@@ -43,11 +48,15 @@ const App: React.FC = () => {
         parsedItems = await fetchXtreamCodes(xcCreds);
       }
       
+      if (parsedItems.length === 0) {
+        throw new Error('Nenhum canal encontrado nesta lista.');
+      }
+
       setItems(parsedItems);
       localStorage.setItem('manelflix_playlist', JSON.stringify(parsedItems));
       setView('Home');
-    } catch (e) {
-      alert('Erro ao carregar lista. Verifique os dados e tente novamente.');
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Erro ao carregar lista.');
     } finally {
       setLoading(false);
     }
@@ -60,7 +69,7 @@ const App: React.FC = () => {
   const renderSetup = () => (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-20">
       <div className="max-w-md w-full bg-zinc-900/50 p-8 rounded-xl border border-zinc-800 backdrop-blur-sm">
-        <h2 className="text-3xl font-bold mb-6 text-center">Entrar no Manelflix</h2>
+        <h2 className="text-3xl font-bold mb-6 text-center text-red-600">Manelflix</h2>
         
         <div className="flex mb-6 bg-black rounded-lg p-1">
           <button 
@@ -76,6 +85,13 @@ const App: React.FC = () => {
             <Database size={16} /> API Code
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg flex items-start gap-3 text-red-200 text-sm">
+            <AlertCircle className="shrink-0" size={18} />
+            <p>{errorMsg}</p>
+          </div>
+        )}
 
         {setupType === 'M3U' ? (
           <div className="space-y-4">
@@ -96,20 +112,35 @@ const App: React.FC = () => {
               value={xcCreds.host}
               onChange={(e) => setXcCreds({...xcCreds, host: e.target.value})}
             />
-            <input
-              type="text"
-              placeholder="Usuário"
-              className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
-              value={xcCreds.user}
-              onChange={(e) => setXcCreds({...xcCreds, user: e.target.value})}
-            />
-            <input
-              type="password"
-              placeholder="Senha"
-              className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
-              value={xcCreds.pass}
-              onChange={(e) => setXcCreds({...xcCreds, pass: e.target.value})}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="text"
+                placeholder="Usuário"
+                className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
+                value={xcCreds.user}
+                onChange={(e) => setXcCreds({...xcCreds, user: e.target.value})}
+              />
+              <input
+                type="password"
+                placeholder="Senha"
+                className="w-full bg-zinc-800 border-none rounded p-4 text-white focus:ring-2 focus:ring-red-600 outline-none"
+                value={xcCreds.pass}
+                onChange={(e) => setXcCreds({...xcCreds, pass: e.target.value})}
+              />
+            </div>
+
+            <div 
+              onClick={() => setXcCreds({...xcCreds, useProxy: !xcCreds.useProxy})}
+              className="flex items-center justify-between p-4 bg-zinc-800/50 rounded cursor-pointer hover:bg-zinc-800 transition"
+            >
+              <div className="flex items-center gap-3">
+                {xcCreds.useProxy ? <ShieldCheck className="text-green-500" size={20} /> : <ShieldAlert className="text-yellow-500" size={20} />}
+                <span className="text-sm font-medium">Usar Proxy (Necessário para erro de CORS)</span>
+              </div>
+              <div className={`w-10 h-5 rounded-full relative transition-colors ${xcCreds.useProxy ? 'bg-red-600' : 'bg-zinc-600'}`}>
+                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${xcCreds.useProxy ? 'left-6' : 'left-1'}`} />
+              </div>
+            </div>
           </div>
         )}
         
@@ -118,11 +149,11 @@ const App: React.FC = () => {
           disabled={loading}
           className="w-full bg-red-600 hover:bg-red-700 font-bold py-4 rounded transition active:scale-95 flex items-center justify-center gap-2 mt-6"
         >
-          {loading ? 'Entrando...' : 'Acessar Agora'}
+          {loading ? 'Validando Acesso...' : 'Acessar Agora'}
         </button>
 
-        <p className="mt-6 text-center text-xs text-gray-500">
-          Ao entrar, você concorda com os termos do Manelflix.
+        <p className="mt-6 text-center text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+          Streaming Player Premium
         </p>
       </div>
     </div>
@@ -152,8 +183,8 @@ const App: React.FC = () => {
                     <button onClick={() => setSelectedItem(featured)} className="bg-white text-black px-6 md:px-10 py-2.5 rounded font-bold flex items-center gap-2 hover:bg-white/90 transition active:scale-95">
                       <Play size={24} fill="black" /> Assistir
                     </button>
-                    <button className="bg-gray-500/50 text-white px-6 md:px-10 py-2.5 rounded font-bold flex items-center gap-2 hover:bg-gray-500/40 transition">
-                      <Info size={24} /> Info
+                    <button onClick={() => setView('Setup')} className="bg-gray-500/50 text-white px-6 md:px-10 py-2.5 rounded font-bold flex items-center gap-2 hover:bg-gray-500/40 transition">
+                      Configurações
                     </button>
                   </div>
                 </div>
@@ -174,11 +205,7 @@ const App: React.FC = () => {
       <Header onSearch={() => alert('Em breve!')} />
       <main>{renderContent()}</main>
       {view !== 'Setup' && (
-        <>
-          <BottomNav activeView={view} setView={setView} />
-          {/* Manel AI integrated here to help users find content from their lists */}
-          <ManelAI playlistItems={items} />
-        </>
+        <BottomNav activeView={view} setView={setView} />
       )}
       {selectedItem && <VideoPlayer item={selectedItem} onClose={() => setSelectedItem(null)} />}
     </div>

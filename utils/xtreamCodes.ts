@@ -2,69 +2,94 @@
 import { IPTVItem, XCCredentials } from '../types';
 
 export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]> {
-  const { host, user, pass } = creds;
-  const baseUrl = host.endsWith('/') ? host.slice(0, -1) : host;
+  const { host, user, pass, useProxy } = creds;
+  let baseUrl = host.endsWith('/') ? host.slice(0, -1) : host;
+  
+  // Proxy utility to bypass CORS if enabled
+  const wrapUrl = (url: string) => {
+    if (!useProxy) return url;
+    return `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  };
+
   const authParams = `username=${user}&password=${pass}`;
-  
   const loginUrl = `${baseUrl}/player_api.php?${authParams}`;
-  
-  const response = await fetch(loginUrl);
-  const data = await response.json();
 
-  if (!data.user_info || data.user_info.auth === 0) {
-    throw new Error('Falha na autenticação Xtream Codes');
-  }
+  try {
+    const response = await fetch(wrapUrl(loginUrl));
+    let data;
+    
+    if (useProxy) {
+      const json = await response.json();
+      data = JSON.parse(json.contents);
+    } else {
+      data = await response.json();
+    }
 
-  // Fetch Live, VOD and Series
-  const [live, vod, series] = await Promise.all([
-    fetch(`${baseUrl}/player_api.php?${authParams}&action=get_live_streams`).then(res => res.json()),
-    fetch(`${baseUrl}/player_api.php?${authParams}&action=get_vod_streams`).then(res => res.json()),
-    fetch(`${baseUrl}/player_api.php?${authParams}&action=get_series`).then(res => res.json())
-  ]);
+    if (!data.user_info || data.user_info.auth === 0) {
+      throw new Error('Falha na autenticação Xtream Codes. Verifique usuário e senha.');
+    }
 
-  const items: IPTVItem[] = [];
+    // Fetch actions
+    const fetchAction = async (action: string) => {
+      const url = `${baseUrl}/player_api.php?${authParams}&action=${action}`;
+      const res = await fetch(wrapUrl(url));
+      if (useProxy) {
+        const j = await res.json();
+        return JSON.parse(j.contents);
+      }
+      return res.json();
+    };
 
-  // Process Live
-  if (Array.isArray(live)) {
-    live.forEach((item: any) => {
-      items.push({
-        id: `live_${item.stream_id}`,
-        name: item.name,
-        logo: item.stream_icon,
-        url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.ts`,
-        category: item.category_id,
-        group: 'Live'
+    const [live, vod, series] = await Promise.all([
+      fetchAction('get_live_streams'),
+      fetchAction('get_vod_streams'),
+      fetchAction('get_series')
+    ]);
+
+    const items: IPTVItem[] = [];
+
+    if (Array.isArray(live)) {
+      live.forEach((item: any) => {
+        items.push({
+          id: `live_${item.stream_id}`,
+          name: item.name,
+          logo: item.stream_icon,
+          url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.ts`,
+          category: item.category_name || 'Live',
+          group: 'Live'
+        });
       });
-    });
-  }
+    }
 
-  // Process VOD
-  if (Array.isArray(vod)) {
-    vod.forEach((item: any) => {
-      items.push({
-        id: `vod_${item.stream_id}`,
-        name: item.name,
-        logo: item.stream_icon,
-        url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${item.container_extension || 'mp4'}`,
-        category: item.category_id,
-        group: 'Movie'
+    if (Array.isArray(vod)) {
+      vod.forEach((item: any) => {
+        items.push({
+          id: `vod_${item.stream_id}`,
+          name: item.name,
+          logo: item.stream_icon,
+          url: `${baseUrl}/movie/${user}/${pass}/${item.stream_id}.${item.container_extension || 'mp4'}`,
+          category: item.category_name || 'Movie',
+          group: 'Movie'
+        });
       });
-    });
-  }
+    }
 
-  // Process Series
-  if (Array.isArray(series)) {
-    series.forEach((item: any) => {
-      items.push({
-        id: `series_${item.series_id}`,
-        name: item.name,
-        logo: item.cover,
-        url: `${baseUrl}/series/${user}/${pass}/${item.series_id}.mp4`, // Simplified for demo
-        category: item.category_id,
-        group: 'Series'
+    if (Array.isArray(series)) {
+      series.forEach((item: any) => {
+        items.push({
+          id: `series_${item.series_id}`,
+          name: item.name,
+          logo: item.cover,
+          url: `${baseUrl}/series/${user}/${pass}/${item.series_id}.mp4`,
+          category: item.category_name || 'Series',
+          group: 'Series'
+        });
       });
-    });
-  }
+    }
 
-  return items;
+    return items;
+  } catch (error: any) {
+    console.error('XC Fetch Error:', error);
+    throw new Error(error.message || 'Erro de conexão com o servidor IPTV');
+  }
 }
