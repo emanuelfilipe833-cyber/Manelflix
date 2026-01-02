@@ -1,7 +1,7 @@
 
 import { IPTVItem, XCCredentials } from '../types';
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 20000) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 25000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
@@ -21,24 +21,26 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
   if (!baseUrl.startsWith('http')) baseUrl = `http://${baseUrl}`;
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
   
-  // Proxy corsproxy.io é mais eficiente para streams e JSONs massivos
   const wrapUrl = (url: string) => {
     if (!useProxy) return url;
+    // O corsproxy.io é o mais compatível com o player do Chrome
     return `https://corsproxy.io/?${encodeURIComponent(url)}`;
   };
 
   const authParams = `username=${user}&password=${pass}`;
+  // Adicionamos output=m3u8 para o servidor já preparar o formato correto
   const loginUrl = `${baseUrl}/player_api.php?${authParams}`;
 
   try {
     const response = await fetchWithTimeout(wrapUrl(loginUrl));
-    if (!response.ok) throw new Error(`O servidor IPTV não respondeu (Status ${response.status})`);
+    if (!response.ok) throw new Error(`Servidor IPTV não respondeu.`);
     
     const data = await response.json();
     if (!data.user_info || data.user_info.auth === 0) {
-      throw new Error('Usuário ou Senha incorretos ou conta expirada.');
+      throw new Error('Conta inválida ou expirada.');
     }
 
+    // Função interna para processar grandes listas sem travar o navegador
     const fetchAction = async (action: string) => {
       try {
         const url = `${baseUrl}/player_api.php?${authParams}&action=${action}`;
@@ -47,12 +49,10 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
         const json = await res.json();
         return Array.isArray(json) ? json : [];
       } catch (e) {
-        console.warn(`Erro ao carregar ${action}:`, e);
         return [];
       }
     };
 
-    // Carregamento paralelo para ganhar tempo
     const [live, vod, series] = await Promise.all([
       fetchAction('get_live_streams'),
       fetchAction('get_vod_streams'),
@@ -61,20 +61,22 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
 
     const items: IPTVItem[] = [];
 
-    // Processamento otimizado para não travar a UI
+    // TV AO VIVO - Usando .m3u8 (Igual ao Blink Player)
     live.forEach((item: any) => {
       if (item.stream_id) {
         items.push({
           id: `live_${item.stream_id}`,
           name: item.name || 'Canal',
           logo: item.stream_icon || '',
-          url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.ts`,
-          category: item.category_name || 'Canais',
+          // Mudamos de .ts para .m3u8 para compatibilidade máxima no Chrome
+          url: `${baseUrl}/live/${user}/${pass}/${item.stream_id}.m3u8`,
+          category: item.category_name || 'TV',
           group: 'Live'
         });
       }
     });
 
+    // FILMES
     vod.forEach((item: any) => {
       if (item.stream_id) {
         const ext = item.container_extension || 'mp4';
@@ -89,6 +91,7 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
       }
     });
 
+    // SÉRIES
     series.forEach((item: any) => {
       if (item.series_id) {
         items.push({
@@ -104,10 +107,8 @@ export async function fetchXtreamCodes(creds: XCCredentials): Promise<IPTVItem[]
 
     return items;
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      throw new Error('O servidor IPTV demorou muito para responder. Tente novamente.');
-    }
-    throw new Error(error.message || 'Falha de conexão com o servidor.');
+    console.error(error);
+    throw new Error('Falha ao conectar. Verifique se o Host/User/Pass estão corretos.');
   }
 }
 
@@ -118,10 +119,8 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
   const url = `${baseUrl}/player_api.php?username=${user}&password=${pass}&action=get_series_info&series_id=${seriesId}`;
-  const wrapped = useProxy ? `https://corsproxy.io/?${encodeURIComponent(url)}` : url;
-
   try {
-    const res = await fetchWithTimeout(wrapped);
+    const res = await fetchWithTimeout(useProxy ? `https://corsproxy.io/?${encodeURIComponent(url)}` : url);
     const data = await res.json();
     if (data.episodes) {
       const seasons = Object.keys(data.episodes);
@@ -135,8 +134,8 @@ export async function getFirstEpisodeUrl(creds: XCCredentials, seriesId: string)
         }
       }
     }
-    throw new Error('Nenhum episódio encontrado.');
+    throw new Error('Série sem episódios.');
   } catch (e) {
-    throw new Error('Falha ao carregar episódio.');
+    throw new Error('Erro ao carregar vídeo.');
   }
 }

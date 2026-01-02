@@ -7,7 +7,7 @@ import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import ContentRow from './components/ContentRow';
 import VideoPlayer from './components/VideoPlayer';
-import { Play, Info, Database, Link as LinkIcon, AlertCircle, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { AlertCircle, Trash2, Loader2, Play } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = React.useState<IPTVItem[]>([]);
@@ -22,21 +22,14 @@ const App: React.FC = () => {
   });
   
   const [loading, setLoading] = React.useState(false);
-  const [loadingStatus, setLoadingStatus] = React.useState('');
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const saved = localStorage.getItem('manelflix_playlist');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setItems(parsed);
-        } else {
-          setView('Setup');
-        }
+        setItems(JSON.parse(saved));
       } catch (e) {
-        localStorage.removeItem('manelflix_playlist');
         setView('Setup');
       }
     } else {
@@ -44,132 +37,100 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handlePlaylistLoad = async (type: 'M3U' | 'XC') => {
+  const handlePlaylistLoad = async () => {
     setLoading(true);
     setErrorMsg(null);
-    setLoadingStatus('Autenticando...');
-    
     try {
-      let parsedItems: IPTVItem[] = [];
-      if (type === 'M3U') {
-        const response = await fetch(m3uUrl);
-        const content = await response.text();
-        parsedItems = parseM3U(content);
+      let data: IPTVItem[] = [];
+      if (setupType === 'M3U') {
+        const res = await fetch(m3uUrl);
+        data = parseM3U(await res.text());
       } else {
-        setLoadingStatus('Carregando catálogo...');
-        parsedItems = await fetchXtreamCodes(xcCreds);
+        data = await fetchXtreamCodes(xcCreds);
         localStorage.setItem('manelflix_creds', JSON.stringify(xcCreds));
       }
       
-      if (parsedItems.length === 0) {
-        throw new Error('Servidor não retornou dados. Verifique sua conexão.');
-      }
-
-      setLoadingStatus('Finalizando...');
-      setItems(parsedItems);
-      localStorage.setItem('manelflix_playlist', JSON.stringify(parsedItems));
+      if (data.length === 0) throw new Error('Servidor retornou lista vazia.');
+      
+      setItems(data);
+      localStorage.setItem('manelflix_playlist', JSON.stringify(data));
       setView('Home');
     } catch (e: any) {
-      setErrorMsg(e.message || 'Erro inesperado ao conectar.');
+      setErrorMsg(e.message || 'Erro de conexão.');
     } finally {
       setLoading(false);
-      setLoadingStatus('');
     }
-  };
-
-  const clearCache = () => {
-    localStorage.removeItem('manelflix_playlist');
-    setItems([]);
-    setView('Setup');
   };
 
   const liveItems = items.filter(i => i.group === 'Live');
   const movieItems = items.filter(i => i.group === 'Movie');
   const seriesItems = items.filter(i => i.group === 'Series');
 
-  const renderContent = () => {
-    if (view === 'Setup') return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-20 bg-black">
-        <div className="max-w-md w-full bg-zinc-900/40 p-10 rounded-[2.5rem] border border-zinc-800/50 backdrop-blur-3xl shadow-2xl">
-          <h2 className="text-5xl font-black mb-2 text-center text-red-600 tracking-tighter uppercase italic">Manelflix</h2>
-          <p className="text-zinc-500 text-center mb-12 text-[10px] font-black uppercase tracking-[0.4em]">Extreme Play v6.0</p>
-          
-          <div className="flex mb-10 bg-black/40 rounded-2xl p-1.5 border border-zinc-800">
-            <button onClick={() => setSetupType('M3U')} className={`flex-1 py-4 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${setupType === 'M3U' ? 'bg-red-600 text-white shadow-xl' : 'text-zinc-500 hover:text-white'}`}>Link M3U</button>
-            <button onClick={() => setSetupType('XC')} className={`flex-1 py-4 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${setupType === 'XC' ? 'bg-red-600 text-white shadow-xl' : 'text-zinc-500 hover:text-white'}`}>API Xtream</button>
+  if (view === 'Setup') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black p-6">
+        <div className="w-full max-w-md space-y-8 bg-zinc-900/50 p-10 rounded-[3rem] border border-zinc-800 backdrop-blur-xl">
+          <div className="text-center">
+            <h1 className="text-5xl font-black text-red-600 tracking-tighter italic uppercase">Manelflix</h1>
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.4em] mt-2">v7.0 Stable</p>
+          </div>
+
+          <div className="flex bg-black p-1 rounded-2xl">
+            <button onClick={() => setSetupType('M3U')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${setupType === 'M3U' ? 'bg-red-600 text-white' : 'text-zinc-500'}`}>Link M3U</button>
+            <button onClick={() => setSetupType('XC')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${setupType === 'XC' ? 'bg-red-600 text-white' : 'text-zinc-500'}`}>API Xtream</button>
           </div>
 
           {errorMsg && (
-            <div className="mb-8 p-5 bg-red-600/10 border border-red-600/20 rounded-2xl text-red-500 text-[11px] font-black uppercase flex gap-4 items-center">
-              <AlertCircle size={20} className="shrink-0" />
-              <span>{errorMsg}</span>
+            <div className="p-4 bg-red-600/10 border border-red-600/20 rounded-2xl text-red-500 text-xs font-bold flex items-center gap-3">
+              <AlertCircle size={18} /> {errorMsg}
             </div>
           )}
 
-          <div className="space-y-5">
+          <div className="space-y-4">
             {setupType === 'M3U' ? (
-              <input type="text" placeholder="URL M3U" className="w-full bg-black/40 border border-zinc-800/80 rounded-2xl p-5 text-white outline-none focus:border-red-600 transition-all font-bold text-xs uppercase" value={m3uUrl} onChange={(e) => setM3uUrl(e.target.value)} />
+              <input type="text" placeholder="URL M3U" className="w-full bg-black/50 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-sm" value={m3uUrl} onChange={e => setM3uUrl(e.target.value)} />
             ) : (
               <>
-                <input type="text" placeholder="SERVIDOR (EX: HTTP://DOMINIO.XYZ)" className="w-full bg-black/40 border border-zinc-800/80 rounded-2xl p-5 text-white outline-none focus:border-red-600 transition-all font-bold text-xs uppercase" value={xcCreds.host} onChange={(e) => setXcCreds({...xcCreds, host: e.target.value})} />
-                <div className="grid grid-cols-2 gap-5">
-                  <input type="text" placeholder="USUÁRIO" className="w-full bg-black/40 border border-zinc-800/80 rounded-2xl p-5 text-white outline-none focus:border-red-600 transition-all font-bold text-xs uppercase" value={xcCreds.user} onChange={(e) => setXcCreds({...xcCreds, user: e.target.value})} />
-                  <input type="password" placeholder="SENHA" className="w-full bg-black/40 border border-zinc-800/80 rounded-2xl p-5 text-white outline-none focus:border-red-600 transition-all font-bold text-xs uppercase" value={xcCreds.pass} onChange={(e) => setXcCreds({...xcCreds, pass: e.target.value})} />
+                <input type="text" placeholder="HOST (URL DO SERVIDOR)" className="w-full bg-black/50 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-sm" value={xcCreds.host} onChange={e => setXcCreds({...xcCreds, host: e.target.value})} />
+                <div className="grid grid-cols-2 gap-4">
+                  <input type="text" placeholder="USUÁRIO" className="w-full bg-black/50 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-sm" value={xcCreds.user} onChange={e => setXcCreds({...xcCreds, user: e.target.value})} />
+                  <input type="password" placeholder="SENHA" className="w-full bg-black/50 border border-zinc-800 p-5 rounded-2xl outline-none focus:border-red-600 text-sm" value={xcCreds.pass} onChange={e => setXcCreds({...xcCreds, pass: e.target.value})} />
                 </div>
-                <button onClick={() => setXcCreds({...xcCreds, useProxy: !xcCreds.useProxy})} className={`w-full p-5 rounded-2xl border transition-all flex items-center justify-between text-[10px] font-black uppercase tracking-widest ${xcCreds.useProxy ? 'bg-red-600/10 border-red-600/30 text-red-500' : 'bg-black/40 border-zinc-800 text-zinc-500'}`}>
-                  {xcCreds.useProxy ? 'Proxy Ativado (Recomendado)' : 'Proxy Desativado'}
-                  <div className={`w-3 h-3 rounded-full ${xcCreds.useProxy ? 'bg-red-600 shadow-[0_0_10px_#dc2626]' : 'bg-zinc-800'}`} />
-                </button>
               </>
             )}
           </div>
-          
-          <button onClick={() => handlePlaylistLoad(setupType)} disabled={loading} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-6 rounded-2xl transition-all shadow-2xl shadow-red-900/40 mt-12 flex flex-col items-center justify-center gap-1 uppercase tracking-widest active:scale-95">
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                <span className="text-[9px] mt-1 opacity-80">{loadingStatus}</span>
-              </>
-            ) : 'Entrar no Manelflix'}
+
+          <button onClick={handlePlaylistLoad} disabled={loading} className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 py-6 rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-3 transition active:scale-95 shadow-xl shadow-red-900/20">
+            {loading ? <Loader2 className="animate-spin" /> : <><Play size={16} fill="white"/> Entrar Agora</>}
           </button>
         </div>
       </div>
     );
+  }
 
-    return (
-      <div className="pb-32 pt-24 space-y-16 animate-in fade-in duration-1000">
+  return (
+    <div className="min-h-screen bg-black text-white">
+      <Header onSearch={() => {}} />
+      <main className="pt-24 pb-32 space-y-12">
         {view === 'Home' && (
           <>
-            <ContentRow title="TV Ao Vivo" items={liveItems.slice(0, 15)} onSelect={setSelectedItem} />
-            <ContentRow title="Filmes" items={movieItems.slice(0, 15)} onSelect={setSelectedItem} />
-            <ContentRow title="Séries" items={seriesItems.slice(0, 15)} onSelect={setSelectedItem} />
+            <ContentRow title="TV Ao Vivo" items={liveItems.slice(0, 20)} onSelect={setSelectedItem} />
+            <ContentRow title="Filmes Recentes" items={movieItems.slice(0, 20)} onSelect={setSelectedItem} />
+            <ContentRow title="Séries" items={seriesItems.slice(0, 20)} onSelect={setSelectedItem} />
           </>
         )}
         {view === 'Live' && <ContentRow title="Todos os Canais" items={liveItems} onSelect={setSelectedItem} />}
         {view === 'Movies' && <ContentRow title="Todos os Filmes" items={movieItems} onSelect={setSelectedItem} />}
         {view === 'Series' && <ContentRow title="Todas as Séries" items={seriesItems} onSelect={setSelectedItem} />}
-        
-        <div className="flex justify-center px-6">
-          <button onClick={clearCache} className="group flex items-center gap-4 bg-zinc-900/50 hover:bg-red-900/20 border border-zinc-800 p-6 rounded-3xl transition-all">
-            <Trash2 size={20} className="text-zinc-600 group-hover:text-red-500" />
-            <div className="text-left">
-              <span className="block text-[10px] font-black uppercase text-zinc-500 group-hover:text-red-500 tracking-widest">Sair da Conta</span>
-              <span className="block text-[9px] font-bold text-zinc-700 uppercase">Limpar dados salvos</span>
-            </div>
+
+        <div className="flex justify-center p-10">
+          <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="text-zinc-700 flex items-center gap-2 hover:text-red-600 transition uppercase font-black text-[9px] tracking-widest">
+            <Trash2 size={14} /> Desconectar Conta
           </button>
         </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen bg-black text-white selection:bg-red-600/40">
-      <Header onSearch={() => {}} />
-      <main>{renderContent()}</main>
-      {view !== 'Setup' && <BottomNav activeView={view} setView={setView} />}
-      {selectedItem && (
-        <VideoPlayer item={selectedItem} onClose={() => setSelectedItem(null)} creds={xcCreds} />
-      )}
+      </main>
+      <BottomNav activeView={view} setView={setView} />
+      {selectedItem && <VideoPlayer item={selectedItem} onClose={() => setSelectedItem(null)} creds={xcCreds} />}
     </div>
   );
 };
